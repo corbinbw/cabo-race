@@ -1,0 +1,76 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cabo Race 🌴</title><link rel="manifest" href="manifest.json"><meta name="theme-color" content="#ff7a59"><link rel="apple-touch-icon" href="icon.svg">
+<style>
+body{margin:0;font-family:system-ui;background:linear-gradient(#0b4f6c,#1b98a0 60%,#f4d58d);color:#fff;min-height:100vh}
+main{max-width:520px;margin:auto;padding:12px}.card{background:#ffffff1f;border-radius:14px;padding:12px;margin:10px 0}
+h1{margin:4px 0;font-size:24px}button,select,input{font-size:16px;border-radius:10px;border:0;padding:8px}
+button{background:#ff7a59;color:#fff;font-weight:600}.sm{padding:4px 8px;font-size:13px}.g{background:#06d6a0}.d{background:#555}
+.it{display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #ffffff22}.it .t{flex:1}.done .t{text-decoration:line-through;opacity:.6}
+.tag{font-size:11px;background:#0006;padding:2px 6px;border-radius:8px;margin-left:4px}.lb{display:flex;gap:10px}.lb div{flex:1;text-align:center;font-size:30px;font-weight:800}
+.fire{color:#ffd166}.row{display:flex;gap:6px;flex-wrap:wrap}a{color:#ffd166}
+</style></head><body><main id="app"></main>
+<script>
+const NT='https://ntfy.sh/',P=['Corbin','Eliza'];
+const DEPART=new Date('2026-10-19T08:00:00-06:00'),BYU=new Date('2026-10-17T17:30:00-06:00'),TB=new Date('2026-10-18T21:00:00-06:00');
+const q=new URLSearchParams(location.search);
+let room=q.get('room')||localStorage.room;if(!room){room=Math.random().toString(36).slice(2,10);}localStorage.room=room;
+if(!q.get('room'))history.replaceState(0,'','?room='+room);
+let me=localStorage['me_'+room]||'';const SK='st_'+room;
+let S=JSON.parse(localStorage[SK]||'{"items":{}}');
+const topic=()=>'cabo-'+room+'-state', ptopic=n=>'cabo-'+room+'-'+n.toLowerCase();
+const other=n=>n==P[0]?P[1]:P[0];
+const day=t=>new Date(t).toLocaleDateString('en-CA',{timeZone:'America/Denver'});
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+function save(){localStorage[SK]=JSON.stringify(S)}
+function merge(it){const c=S.items[it.id];if(!c||it.u>c.u){S.items[it.id]=it;save();return true}return false}
+async function pub(it){await fetch(NT+topic(),{method:'POST',body:JSON.stringify(it)}).catch(()=>{})}
+function notify(to,title,msg){fetch(NT+ptopic(to),{method:'POST',headers:{Title:title,Tags:'palm_tree'},body:msg}).catch(()=>{})}
+function upd(it,ch){Object.assign(it,ch,{u:Date.now()});merge(it);pub(it);render()}
+function approved(it){return it.ap||Date.now()-it.c>2*3600e3}
+// scoring
+function score(){const tot={Corbin:0,Eliza:0},days={},streak={Corbin:0,Eliza:0},pts={};
+ const done=Object.values(S.items).filter(i=>i.done&&!i.del).sort((a,b)=>a.dt-b.dt);
+ for(const n of P){let chain=0,last=0;for(const i of done.filter(i=>i.by==n)){chain=(i.dt-last<=3600e3)?chain+1:1;last=i.dt;
+  let p=+i.pts*(chain>=3?1.5:1);pts[i.id]={p,chain};tot[n]+=p;const d=day(i.dt);(days[d]=days[d]||{Corbin:0,Eliza:0})[n]+=p}
+  streak[n]=(Date.now()-last<=3600e3)?chain:0}
+ const rounds=[];for(const d of ['2026-10-14','2026-10-15','2026-10-16','2026-10-17','2026-10-18']){const r=days[d]||{Corbin:0,Eliza:0};
+  const over=d<day(Date.now());let w=r.Corbin>r.Eliza?'Corbin':r.Eliza>r.Corbin?'Eliza':(r.Corbin?'tie':'-');
+  if(over&&P.includes(w))tot[w]+=5;rounds.push({d,r,w,over})}
+ return{tot,rounds,streak,pts}}
+function cd(t){let s=Math.max(0,(t-Date.now())/1e3|0);return`${s/86400|0}d ${s%86400/3600|0}h ${s%3600/60|0}m`}
+function add(){const t=document.getElementById('nt').value.trim();if(!t)return;const it={id:uid(),t,owner:me,pts:+document.getElementById('np').value,c:Date.now(),ap:false,proposer:me};
+ upd(it,{});notify(other(me),'New task to approve',`${me} added "${t}" for ${it.pts} pts. Open Cabo Race to approve/adjust.`)}
+function chal(){const t=prompt('Challenge task for '+other(me)+':');if(!t)return;const b=+prompt('Bonus points?','5')||5;
+ const it={id:uid(),t,owner:other(me),pts:b,c:Date.now(),ap:true,chal:me,cday:day(Date.now())};upd(it,{});notify(other(me),'Challenge card!',`${me} challenges you: "${t}" (+${b} bonus)`)}
+function sd(){const t=prompt('Sudden death task (agree on it together):');if(!t)return;upd({id:'sd',t,owner:'both',pts:0,c:Date.now(),ap:true,sd:1},{})}
+function check(id){const it=S.items[id];if(it.done)return upd(it,{done:false,by:null,dt:null});
+ upd(it,{done:true,by:me,dt:Date.now()});const sc=score();
+ notify(other(me),`${me} finished a task`,`"${it.t}" (+${sc.pts[id]?.p??it.pts} pts). Score: ${me} ${sc.tot[me]} - ${other(me)} ${sc.tot[other(me)]}`)}
+function render(){const A=document.getElementById('app');
+ if(!me){A.innerHTML=`<h1>🌴 Cabo Race</h1><div class=card>Who are you?<div class=row>${P.map(n=>`<button onclick="me='${n}';localStorage['me_${room}']=me;render()">${n}</button>`).join('')}</div><p>Room: <b>${room}</b>. Both phones must open the same link.</p></div>`;return}
+ const sc=score(),items=Object.values(S.items).filter(i=>!i.del).sort((a,b)=>a.c-b.c);const today=day(Date.now());
+ const usedChal=items.some(i=>i.chal==me&&i.cday==today);const tied=Date.now()>TB&&sc.tot.Corbin==sc.tot.Eliza;const sdIt=S.items.sd;
+ const li=i=>{const mine=i.owner==me||i.owner=='both',p=sc.pts[i.id];return`<div class="it ${i.done?'done':''}"><input type=checkbox ${i.done?'checked':''} ${mine?'':'disabled'} onchange="check('${i.id}')" style="width:24px;height:24px">
+ <span class=t>${esc(i.t)}${i.chal?'<span class=tag>🃏 from '+i.chal+'</span>':''}<span class=tag>${i.pts} pts ${approved(i)?'🔒':'⏳'}</span>${p&&p.chain>=3?'<span class=tag fire>🔥x1.5</span>':''}${i.done?'<span class=tag>'+i.by+'</span>':''}</span>
+ ${!approved(i)&&i.proposer!=me?`<button class="sm g" onclick="upd(S.items['${i.id}'],{ap:true})">OK</button><button class=sm onclick="adj('${i.id}')">Adj</button>`:''}
+ ${i.owner==me&&!i.done?`<button class="sm d" onclick="edit('${i.id}')">✏️</button><button class="sm d" onclick="if(confirm('Delete?'))upd(S.items['${i.id}'],{del:true})">🗑</button>`:''}</div>`};
+ A.innerHTML=`<h1>🌴 Cabo Race <small style="font-size:13px">(${me})</small></h1>
+ <div class=card>✈️ Cabo departure Mon Oct 19: <b>${cd(DEPART)}</b><br>🏈 BYU vs Notre Dame, Sat 5:30pm MT: ${BYU>Date.now()?cd(BYU):'done'} <span class=tag>blocked Sat evening</span></div>
+ <div class="card lb">${P.map(n=>`<div>${n}<br>${+sc.tot[n].toFixed(1)}${sc.streak[n]>=2?`<div class=fire style="font-size:14px">🔥 streak ${sc.streak[n]}${sc.streak[n]>=2?' (next x1.5)':''}</div>`:''}</div>`).join('')}</div>
+ ${tied||sdIt?`<div class=card style="background:#c00a">⚔️ SUDDEN DEATH${sdIt?`: first to finish wins!<br>${li(sdIt)}${sdIt.done?'<h2>🏆 '+sdIt.by+' wins!</h2>':''}`:` Tied at Sun 9pm. <button onclick=sd()>Set final task</button>`}</div>`:''}
+ <div class=card><div class=row><input id=nt placeholder="New task" style="flex:1"><select id=np><option value=1>1</option><option value=3 selected>3</option><option value=5>5</option></select><button onclick=add()>Add</button></div>
+ <div class=row style="margin-top:6px"><button class=sm ${usedChal?'disabled style="opacity:.4"':''} onclick=chal()>🃏 Challenge card ${usedChal?'(used today)':'(1/day)'}</button></div></div>
+ ${P.map(n=>`<div class=card><b>${n}${n==me?' (you)':''}</b>${items.filter(i=>i.owner==n).map(li).join('')||'<p>No tasks yet</p>'}</div>`).join('')}
+ <div class=card><b>Daily rounds</b> (+5 to day winner)${sc.rounds.map(r=>`<div>${r.d.slice(5)}: C ${+r.r.Corbin.toFixed(1)} / E ${+r.r.Eliza.toFixed(1)} → ${r.over?r.w:(r.d==today?'live: '+r.w:'upcoming')}</div>`).join('')}</div>
+ <div class=card><b>🔔 Notifications</b><br>Install the free <b>ntfy</b> app, tap +, subscribe to topic:<br><code>${ptopic(me)}</code><br>(server ntfy.sh) or <a href="${NT+ptopic(me)}">open topic</a>.<br><img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent('ntfy://ntfy.sh/'+ptopic(me))}"><br>
+ Share link: <a href="?room=${room}">${location.origin+location.pathname}?room=${room}</a> <button class="sm d" onclick="me='';localStorage.removeItem('me_${room}');render()">switch user</button></div>`}
+function esc(s){return s.replace(/[&<>"]/g,c=>'&#'+c.charCodeAt(0)+';')}
+function edit(id){const it=S.items[id],t=prompt('Task',it.t);if(t==null)return;const p=+prompt('Points (1/3/5 or any)',it.pts)||it.pts;
+ const ch={t,pts:p};if(p!=it.pts&&!it.chal){ch.ap=false;ch.c=Date.now();ch.proposer=me;notify(other(me),'Points changed',`${me} set "${t}" to ${p} pts. Approve?`)}upd(it,ch)}
+function adj(id){const p=+prompt('Adjusted points',S.items[id].pts);if(p)upd(S.items[id],{pts:p,ap:true})}
+// sync: poll cache, republish local, live SSE
+async function sync(){try{const r=await fetch(NT+topic()+'/json?poll=1&since=all');for(const l of (await r.text()).split('\n'))if(l){const m=JSON.parse(l);if(m.event=='message')try{merge(JSON.parse(m.message))}catch{}}}catch{}
+ render();const lastRe=+localStorage['re_'+room]||0;if(Date.now()-lastRe>3600e3){localStorage['re_'+room]=Date.now();for(const it of Object.values(S.items))pub(it)}
+ const es=new EventSource(NT+topic()+'/sse');es.onmessage=e=>{const m=JSON.parse(e.data);try{if(merge(JSON.parse(m.message)))render()}catch{}}}
+render();sync();setInterval(render,30000);if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+</script></body></html>
